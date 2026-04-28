@@ -50,6 +50,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -71,15 +72,16 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import java.util.UUID
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -192,14 +194,7 @@ data class AppInfo(
     val icon: ImageBitmap,
     val isSystemApp: Boolean,
     val isVirtual: Boolean = false,
-    val isOpen: Boolean = false,
-    val folderId: String? = null
-)
-
-data class AppFolder(
-    val id: String,
-    val name: String,
-    val appPackageNames: List<String>
+    val isOpen: Boolean = false
 )
 
 fun isAccessibilityServiceEnabled(context: Context): Boolean {
@@ -227,25 +222,8 @@ fun GnomeLauncher() {
     var selectedIconShape by remember { mutableStateOf(prefs.getInt("icon_shape", 12)) }
     var isFreeformModeEnabled by remember { mutableStateOf(prefs.getBoolean("freeform_mode_enabled", false)) }
 
-    var folders by remember {
-        mutableStateOf(
-            prefs.getString("app_folders", null)?.let {
-                try {
-                    // Simple manual parsing or use a proper JSON library if available
-                    // For now, let's assume it's a list of folders
-                    emptyList<AppFolder>()
-                } catch (e: Exception) { emptyList<AppFolder>() }
-            } ?: emptyList<AppFolder>()
-        )
-    }
-
     var draggingApp by remember { mutableStateOf<AppInfo?>(null) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
-
-    val updateFolders = { newFolders: List<AppFolder> ->
-        folders = newFolders
-        // Persist folders logic here (e.g., using JSON)
-    }
 
     var showOverview by remember { mutableStateOf(false) }
     var showQuickSettings by remember { mutableStateOf(false) }
@@ -857,8 +835,6 @@ fun GnomeLauncher() {
                             ) {
                                 ActivitiesOverview(
                                     apps = apps,
-                                    folders = folders,
-                                    onUpdateFolders = updateFolders,
                                     searchQuery = searchQuery,
                                     onSearchQueryChange = { searchQuery = it },
                                     onAppClick = { packageName ->
@@ -1674,10 +1650,17 @@ fun UbuntuDock(apps: List<AppInfo>, pinnedApps: Set<String>, showOverview: Boole
                         .pointerInput(Unit) {
                             awaitPointerEventScope {
                                 while (true) {
-                                    val event = awaitPointerEvent()
-                                    when (event.type) {
-                                        PointerEventType.Enter -> isHovered = true
-                                        PointerEventType.Exit -> isHovered = false
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    if (event.type == PointerEventType.Enter) isHovered = true
+                                    if (event.type == PointerEventType.Exit) isHovered = false
+                                    if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                                        onAppLongClick(app, itemOffset)
+                                        event.changes.forEach { it.consume() }
+                                        while (true) {
+                                            val nextEvent = awaitPointerEvent(PointerEventPass.Initial)
+                                            nextEvent.changes.forEach { it.consume() }
+                                            if (nextEvent.type == PointerEventType.Release) break
+                                        }
                                     }
                                 }
                             }
@@ -1729,10 +1712,16 @@ fun UbuntuDock(apps: List<AppInfo>, pinnedApps: Set<String>, showOverview: Boole
                     .pointerInput(Unit) {
                         awaitPointerEventScope {
                             while (true) {
-                                val event = awaitPointerEvent()
-                                when (event.type) {
-                                    PointerEventType.Enter -> isHovered = true
-                                    PointerEventType.Exit -> isHovered = false
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                if (event.type == PointerEventType.Enter) isHovered = true
+                                if (event.type == PointerEventType.Exit) isHovered = false
+                                if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                                    event.changes.forEach { it.consume() }
+                                    while (true) {
+                                        val nextEvent = awaitPointerEvent(PointerEventPass.Initial)
+                                        nextEvent.changes.forEach { it.consume() }
+                                        if (nextEvent.type == PointerEventType.Release) break
+                                    }
                                 }
                             }
                         }
@@ -1832,10 +1821,16 @@ fun TopBar(
                         .pointerInput(Unit) {
                             awaitPointerEventScope {
                                 while (true) {
-                                    val event = awaitPointerEvent()
-                                    when (event.type) {
-                                        PointerEventType.Enter -> isActivitiesHovered = true
-                                        PointerEventType.Exit -> isActivitiesHovered = false
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    if (event.type == PointerEventType.Enter) isActivitiesHovered = true
+                                    if (event.type == PointerEventType.Exit) isActivitiesHovered = false
+                                    if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                                        event.changes.forEach { it.consume() }
+                                        while (true) {
+                                            val nextEvent = awaitPointerEvent(PointerEventPass.Initial)
+                                            nextEvent.changes.forEach { it.consume() }
+                                            if (nextEvent.type == PointerEventType.Release) break
+                                        }
                                     }
                                 }
                             }
@@ -1875,10 +1870,16 @@ fun TopBar(
                         .pointerInput(Unit) {
                             awaitPointerEventScope {
                                 while (true) {
-                                    val event = awaitPointerEvent()
-                                    when (event.type) {
-                                        PointerEventType.Enter -> isClockHovered = true
-                                        PointerEventType.Exit -> isClockHovered = false
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    if (event.type == PointerEventType.Enter) isClockHovered = true
+                                    if (event.type == PointerEventType.Exit) isClockHovered = false
+                                    if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                                        event.changes.forEach { it.consume() }
+                                        while (true) {
+                                            val nextEvent = awaitPointerEvent(PointerEventPass.Initial)
+                                            nextEvent.changes.forEach { it.consume() }
+                                            if (nextEvent.type == PointerEventType.Release) break
+                                        }
                                     }
                                 }
                             }
@@ -1907,10 +1908,16 @@ fun TopBar(
                         .pointerInput(Unit) {
                             awaitPointerEventScope {
                                 while (true) {
-                                    val event = awaitPointerEvent()
-                                    when (event.type) {
-                                        PointerEventType.Enter -> isQuickSettingsHovered = true
-                                        PointerEventType.Exit -> isQuickSettingsHovered = false
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    if (event.type == PointerEventType.Enter) isQuickSettingsHovered = true
+                                    if (event.type == PointerEventType.Exit) isQuickSettingsHovered = false
+                                    if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                                        event.changes.forEach { it.consume() }
+                                        while (true) {
+                                            val nextEvent = awaitPointerEvent(PointerEventPass.Initial)
+                                            nextEvent.changes.forEach { it.consume() }
+                                            if (nextEvent.type == PointerEventType.Release) break
+                                        }
                                     }
                                 }
                             }
@@ -2455,11 +2462,9 @@ fun QuickPill(icon: ImageVector, label: String, active: Boolean, onClick: () -> 
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
-                        val event = awaitPointerEvent()
-                        when (event.type) {
-                            PointerEventType.Enter -> isHovered = true
-                            PointerEventType.Exit -> isHovered = false
-                        }
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.type == PointerEventType.Enter) isHovered = true
+                        if (event.type == PointerEventType.Exit) isHovered = false
                     }
                 }
             }
@@ -2478,8 +2483,6 @@ fun QuickPill(icon: ImageVector, label: String, active: Boolean, onClick: () -> 
 @Composable
 fun ActivitiesOverview(
     apps: List<AppInfo>,
-    folders: List<AppFolder>,
-    onUpdateFolders: (List<AppFolder>) -> Unit,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onAppClick: (String) -> Unit,
@@ -2492,92 +2495,17 @@ fun ActivitiesOverview(
 ) {
     val isLight = MaterialTheme.colorScheme.onSurface == Color.Black
     val density = LocalDensity.current
-    val refreshThreshold = with(density) { 100.dp.toPx() }
+    val refreshThreshold = with(density) { 60.dp.toPx() }
     val filteredApps = remember(searchQuery, apps) {
         val base = if (searchQuery.isEmpty()) apps else apps.filter { it.name.contains(searchQuery, ignoreCase = true) }
         base.distinctBy { it.packageName }
     }
-    var draggingApp by remember { mutableStateOf<AppInfo?>(null) }
-    var dragPosition by remember { mutableStateOf(Offset.Zero) }
-    var dropTargetPackage by remember { mutableStateOf<String?>(null) }
-
-    val appPositions = remember { mutableMapOf<String, Rect>() }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { offset ->
-                        dragPosition = offset
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        dragPosition += dragAmount
-
-                        // Hit testing
-                        dropTargetPackage = appPositions.entries.find { entry ->
-                            entry.key != draggingApp?.packageName && entry.value.contains(dragPosition)
-                        }?.key
-                    },
-                    onDragEnd = {
-                        if (draggingApp != null && dropTargetPackage != null) {
-                            val sourceApp = draggingApp!!
-                            val targetPkg = dropTargetPackage!!
-
-                            // Create or add to folder
-                            val targetFolder = folders.find { it.id == targetPkg || it.appPackageNames.contains(targetPkg) }
-                            if (targetFolder != null) {
-                                val newFolders = folders.map {
-                                    if (it.id == targetFolder.id) {
-                                        if (!it.appPackageNames.contains(sourceApp.packageName)) {
-                                            it.copy(appPackageNames = it.appPackageNames + sourceApp.packageName)
-                                        } else it
-                                    }
-                                    else it
-                                }
-                                onUpdateFolders(newFolders)
-                            } else {
-                                val newFolder = AppFolder(
-                                    id = UUID.randomUUID().toString(),
-                                    name = "New Folder",
-                                    appPackageNames = listOf(targetPkg, sourceApp.packageName)
-                                )
-                                onUpdateFolders(folders + newFolder)
-                            }
-                        }
-                        draggingApp = null
-                        dragPosition = Offset.Zero
-                        dropTargetPackage = null
-                    },
-                    onDragCancel = {
-                        draggingApp = null
-                        dragPosition = Offset.Zero
-                        dropTargetPackage = null
-                    }
-                )
-            }
-            .pointerInput(Unit) {
-                var totalDrag = 0f
-                detectVerticalDragGestures(
-                    onDragEnd = {
-                        if (totalDrag > refreshThreshold) onRefresh()
-                        totalDrag = 0f
-                    },
-                    onDragCancel = { totalDrag = 0f },
-                    onVerticalDrag = { _, dragAmount ->
-                        totalDrag += dragAmount
-                    }
-                )
-            }
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onBackgroundClick() }
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.05f))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onBackgroundClick() }
-        )
-
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -2628,7 +2556,10 @@ fun ActivitiesOverview(
                 )
             }
             Spacer(modifier = Modifier.height(48.dp))
+            val gridState = rememberLazyGridState()
+            var totalDrag by remember { mutableFloatStateOf(0f) }
             LazyVerticalGrid(
+                state = gridState,
                 columns = GridCells.Adaptive(minSize = 100.dp),
                 modifier = Modifier
                     .weight(1f)
@@ -2638,116 +2569,41 @@ fun ActivitiesOverview(
                         scaleX = scale
                         scaleY = scale
                         alpha = transitionProgress
+                    }
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures(
+                            onDragEnd = {
+                                if (totalDrag > refreshThreshold) onRefresh()
+                                totalDrag = 0f
+                            },
+                            onDragCancel = { totalDrag = 0f },
+                            onVerticalDrag = { _, dragAmount ->
+                                // Only accumulate if we're at the top and pulling down
+                                if (gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0) {
+                                    totalDrag += dragAmount
+                                } else {
+                                    totalDrag = 0f
+                                }
+                            }
+                        )
                     },
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(36.dp),
                 horizontalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                val appsInFolders = folders.flatMap { it.appPackageNames }.toSet()
-                val standaloneApps = filteredApps.filter { it.packageName !in appsInFolders }
-
-                items(folders, key = { it.id }) { folder ->
-                    FolderIconItem(
-                        folder = folder,
-                        apps = apps,
-                        iconShape = iconShape,
-                        isTarget = dropTargetPackage == folder.id, // Need to adapt hit testing for folders
-                        onPositioned = { rect -> appPositions[folder.id] = rect }
-                    )
-                }
-
-                items(standaloneApps, key = { it.packageName }) { app ->
-                    val isDragging = draggingApp?.packageName == app.packageName
+                items(filteredApps, key = { it.packageName }) { app ->
                     AppIconItem(
                         app = app,
                         onClick = { onAppClick(app.packageName) },
                         onLongClick = { offset ->
-                            draggingApp = app
-                            dragPosition = offset
                             onAppLongClick(app, offset)
                         },
-                        iconShape = iconShape,
-                        modifier = Modifier
-                            .graphicsLayer { alpha = if (isDragging) 0f else 1f }
-                            .onGloballyPositioned { coords ->
-                                val rect = coords.boundsInWindow()
-                                appPositions[app.packageName] = rect
-                            },
-                        isTarget = dropTargetPackage == app.packageName
+                        iconShape = iconShape
                     )
                 }
             }
             Spacer(modifier = Modifier.navigationBarsPadding())
         }
-
-        if (draggingApp != null) {
-            Box(
-                modifier = Modifier
-                    .offset { IntOffset(dragPosition.x.toInt() - 100, dragPosition.y.toInt() - 100) } // Adjust for item center
-                    .size(100.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                AppIconItem(
-                    app = draggingApp!!,
-                    onClick = {},
-                    onLongClick = {},
-                    iconShape = iconShape,
-                    isDragging = true
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun FolderIconItem(
-    folder: AppFolder,
-    apps: List<AppInfo>,
-    iconShape: Int,
-    isTarget: Boolean,
-    onPositioned: (Rect) -> Unit
-) {
-    val folderApps = apps.filter { it.packageName in folder.appPackageNames }
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .width(100.dp)
-            .onGloballyPositioned { coords -> onPositioned(coords.boundsInWindow()) }
-    ) {
-        Box(
-            modifier = Modifier
-                .size(72.dp)
-                .clip(RoundedCornerShape(iconShape.dp))
-                .background(
-                    if (isTarget) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            // Folder preview (2x2 grid)
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.size(48.dp),
-                userScrollEnabled = false
-            ) {
-                items(folderApps.take(4)) { app ->
-                    Image(
-                        bitmap = app.icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp).padding(2.dp)
-                    )
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = folder.name,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 13.sp,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
     }
 }
 
@@ -2769,18 +2625,29 @@ fun AppIconItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
             .width(100.dp)
+            .onGloballyPositioned { coords -> itemOffset = coords.positionInWindow() }
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
-                        val event = awaitPointerEvent()
-                        when (event.type) {
-                            PointerEventType.Enter -> isHovered = true
-                            PointerEventType.Exit -> isHovered = false
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.type == PointerEventType.Enter) isHovered = true
+                        if (event.type == PointerEventType.Exit) isHovered = false
+                        if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                            onLongClick(itemOffset)
+                            event.changes.forEach { it.consume() }
+                            while (true) {
+                                val nextEvent = awaitPointerEvent(PointerEventPass.Initial)
+                                nextEvent.changes.forEach { it.consume() }
+                                if (nextEvent.type == PointerEventType.Release) break
+                            }
                         }
                     }
                 }
             }
-            .combinedClickable(onClick = onClick, onLongClick = { onLongClick(itemOffset) })
+            .combinedClickable(
+                onClick = { onClick() },
+                onLongClick = { onLongClick(itemOffset) }
+            )
     ) {
         Box(
             modifier = Modifier
@@ -2836,12 +2703,31 @@ fun Dash(apps: List<AppInfo>, pinnedApps: Set<String>, onAppClick: (String) -> U
         ) {
             appsToDisplay.forEach { app ->
                 var itemOffset by remember { mutableStateOf(Offset.Zero) }
+                var isHovered by remember { mutableStateOf(false) }
                 Box(
                     modifier = Modifier
                         .size(60.dp)
                         .onGloballyPositioned { coords -> itemOffset = coords.positionInWindow() }
                         .clip(RoundedCornerShape(iconShape.dp))
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+                        .background(if (isHovered) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+                        .pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    if (event.type == PointerEventType.Enter) isHovered = true
+                                    if (event.type == PointerEventType.Exit) isHovered = false
+                                    if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                                        onAppLongClick(app, itemOffset)
+                                        event.changes.forEach { it.consume() }
+                                        while (true) {
+                                            val nextEvent = awaitPointerEvent(PointerEventPass.Initial)
+                                            nextEvent.changes.forEach { it.consume() }
+                                            if (nextEvent.type == PointerEventType.Release) break
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         .combinedClickable(
                             onClick = { onAppClick(app.packageName) },
                             onLongClick = { onAppLongClick(app, itemOffset) }
