@@ -44,7 +44,7 @@ jobs:
           ./gradlew bundleRelease
 
       - name: Sign Release APK
-        ifndef: ${{ env.HAS_SIGNING_KEYS == 'false' }} # Internal check fallback
+        if: ${{ env.HAS_SIGNING_KEYS != 'false' }}
         id: sign_app
         uses: r0adkll/sign-android-release@v1
         with:
